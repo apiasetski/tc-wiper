@@ -1,0 +1,5 @@
+[plugininstall]
+description=TC Wiper - move files here with F6 to securely wipe them
+type=wfx
+file=TCWiper.wfx
+defaultdir=TCWiper

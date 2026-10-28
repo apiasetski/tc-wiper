@@ -1,0 +1,17 @@
+EXPORTS
+    FsInit
+    FsInitW
+    FsFindFirst
+    FsFindFirstW
+    FsFindNext
+    FsFindNextW
+    FsFindClose
+    FsMkDir
+    FsMkDirW
+    FsPutFile
+    FsPutFileW
+    FsStatusInfo
+    FsStatusInfoW
+    FsExecuteFile
+    FsExecuteFileW
+    FsGetDefRootName

@@ -1,0 +1,7 @@
+# Build output (recreate with build.cmd)
+build/
+dist/
+*.obj
+*.exp
+*.lib
+*.pdb
