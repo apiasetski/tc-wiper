@@ -1,0 +1,17 @@
+TC Wiper - version history
+==========================
+
+1.0.0 beta (2026-10-28)
+  * First public release (beta: tested by the author only).
+  * Plugin panel shows "Move here to securely wipe", Readme.txt and Readme_ru.txt.
+  * F6 (Move) into the panel: confirmation with number of files and folders and
+    up to 5 selected names; nothing is touched before you confirm.
+  * Each file: one pass of cryptographic random data including cluster slack and
+    alternate data streams, flush, truncate, 3 random renames, delete.
+    Emptied folders are renamed and removed.
+  * Progress window with Cancel; summary with reasons for files not erased.
+  * Protected: Windows and Program Files folders, hard-linked files, files in use.
+    Symbolic links: only the link is removed.
+  * F5 (Copy) never erases anything.
+  * 32-bit (.wfx) and 64-bit (.wfx64) versions, Unicode and long path support.
+  * Developed using Claude Opus 5.5 Medium (Anthropic).

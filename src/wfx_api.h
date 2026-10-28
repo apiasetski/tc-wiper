@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Subset of the Total Commander file system plugin interface (fsplugin.h)
 // used by TC Wiper. Values match the official WFX SDK from ghisler.com.
 #pragma once
@@ -24,6 +25,12 @@
 
 #define FS_STATUS_OP_PUT_SINGLE     4
 #define FS_STATUS_OP_PUT_MULTI      5
+
+typedef struct {
+    DWORD SizeLow, SizeHigh;
+    FILETIME LastWriteTime;
+    int Attr;
+} RemoteInfoStruct;
 
 typedef int  (__stdcall *tProgressProc)(int PluginNr, char* SourceName, char* TargetName, int PercentDone);
 typedef void (__stdcall *tLogProc)(int PluginNr, int MsgType, char* LogString);

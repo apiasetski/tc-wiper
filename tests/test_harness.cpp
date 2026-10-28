@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Loads the test build of the plugin and calls it the way Total Commander does.
 // Usage: test_harness.exe <tcwiper_test.dll> <work folder>
 #define WIN32_LEAN_AND_MEAN
@@ -12,6 +13,10 @@ typedef HANDLE (__stdcall *tFsFindFirstW)(WCHAR*, WIN32_FIND_DATAW*);
 typedef void   (__stdcall *tFsStatusInfoW)(WCHAR*, int, int);
 typedef int    (__stdcall *tFsPutFileW)(WCHAR*, WCHAR*, int);
 typedef BOOL   (__stdcall *tFsMkDirW)(WCHAR*);
+typedef BOOL   (__stdcall *tFsFindNextW)(HANDLE, WIN32_FIND_DATAW*);
+typedef int    (__stdcall *tFsFindClose)(HANDLE);
+typedef int    (__stdcall *tFsExecuteFileW)(HWND, WCHAR*, WCHAR*);
+typedef int    (__stdcall *tFsGetFileW)(WCHAR*, WCHAR*, int, RemoteInfoStruct*);
 typedef const wchar_t* (*tText)();
 typedef void   (*tSetCancel)(BOOL);
 
@@ -19,6 +24,10 @@ static tFsFindFirstW  pFindFirst;
 static tFsStatusInfoW pStatus;
 static tFsPutFileW    pPut;
 static tFsMkDirW      pMkDir;
+static tFsFindNextW   pFindNext;
+static tFsFindClose   pFindClose;
+static tFsExecuteFileW pExecute;
+static tFsGetFileW    pGet;
 static tText          pConfirm, pSummary;
 static tSetCancel     pSetCancel;
 
@@ -127,12 +136,16 @@ int wmain(int argc, wchar_t** argv)
     pStatus    = (tFsStatusInfoW)GetProcAddress(dll, "FsStatusInfoW");
     pPut       = (tFsPutFileW)GetProcAddress(dll, "FsPutFileW");
     pMkDir     = (tFsMkDirW)GetProcAddress(dll, "FsMkDirW");
+    pFindNext  = (tFsFindNextW)GetProcAddress(dll, "FsFindNextW");
+    pFindClose = (tFsFindClose)GetProcAddress(dll, "FsFindClose");
+    pExecute   = (tFsExecuteFileW)GetProcAddress(dll, "FsExecuteFileW");
+    pGet       = (tFsGetFileW)GetProcAddress(dll, "FsGetFileW");
     pConfirm   = (tText)GetProcAddress(dll, "TcwTestConfirmText");
     pSummary   = (tText)GetProcAddress(dll, "TcwTestSummaryText");
     pSetCancel = (tSetCancel)GetProcAddress(dll, "TcwTestSetCancel");
     const char* required[] = { "FsInit", "FsFindFirst", "FsFindNext", "FsFindClose", "FsGetDefRootName",
-                               "FsPutFile", "FsMkDir", "FsStatusInfo", "FsExecuteFile" };
-    bool allExports = pInit && pFindFirst && pStatus && pPut && pMkDir && pConfirm && pSummary && pSetCancel;
+                               "FsPutFile", "FsMkDir", "FsStatusInfo", "FsExecuteFile", "FsGetFile" };
+    bool allExports = pInit && pFindFirst && pStatus && pPut && pMkDir && pFindNext && pFindClose && pExecute && pGet && pConfirm && pSummary && pSetCancel;
     for (const char* name : required) allExports = allExports && GetProcAddress(dll, name);
     Check(allExports, L"all WFX functions exported with undecorated names");
     if (!allExports) return 1;
@@ -149,8 +162,40 @@ int wmain(int argc, wchar_t** argv)
     HANDLE h = pFindFirst(root, &fd);
     Check(h != INVALID_HANDLE_VALUE && wcscmp(fd.cFileName, L"Move here to securely wipe") == 0,
           L"root shows the placeholder entry");
+    Check(pFindNext(h, &fd) && wcscmp(fd.cFileName, L"Readme.txt") == 0 && fd.nFileSizeLow > 10000,
+          L"second entry is Readme.txt with its size");
+    Check(pFindNext(h, &fd) && wcscmp(fd.cFileName, L"Readme_ru.txt") == 0 && fd.nFileSizeLow > 10000,
+          L"third entry is Readme_ru.txt");
+    Check(!pFindNext(h, &fd), L"no further entries");
+    {
+        WCHAR ru[] = L"\\Readme_ru.txt", ruOpen[] = L"open";
+        std::wstring ruCopy = w + L"readme_ru_copy.txt";
+        Check(pExecute(nullptr, ru, ruOpen) == FS_EXEC_YOURSELF &&
+              pGet(ru, &ruCopy[0], 0, nullptr) == FS_FILE_OK &&
+              ReadAll(ruCopy).find("\xD0\x91\xD0\x95\xD0\xA2\xD0\x90") != std::string::npos,  // "БЕТА"
+              L"Readme_ru.txt opens and contains the Russian text");
+        DeleteFileW(ruCopy.c_str());
+    }
+    pFindClose(h);
     Check(pFindFirst(sub, &fd) == INVALID_HANDLE_VALUE && GetLastError() == ERROR_NO_MORE_FILES,
           L"subfolders are empty");
+
+    wprintf(L"Readme\n");
+    WCHAR readme[] = L"\\Readme.txt", open[] = L"open", placeholder[] = L"\\Move here to securely wipe";
+    Check(pExecute(nullptr, readme, open) == FS_EXEC_YOURSELF, L"Enter on Readme.txt lets TC open it");
+    Check(pExecute(nullptr, placeholder, open) == FS_EXEC_OK, L"Enter on placeholder shows help");
+    std::wstring copy = w + L"readme_copy.txt";
+    Check(pGet(readme, &copy[0], 0, nullptr) == FS_FILE_OK, L"Readme.txt can be copied out");
+    std::string text = ReadAll(copy);
+    Check(text.compare(0, 3, "\xEF\xBB\xBF") == 0 && text.find("SSD") != std::string::npos,
+          L"copied file is the UTF-8 readme text");
+    Check(pGet(readme, &copy[0], 0, nullptr) == FS_FILE_EXISTS, L"existing target reported");
+    Check(pGet(readme, &copy[0], FS_COPYFLAGS_OVERWRITE, nullptr) == FS_FILE_OK, L"overwrite allowed");
+    Check(pGet(readme, &copy[0], FS_COPYFLAGS_MOVE | FS_COPYFLAGS_OVERWRITE, nullptr) == FS_FILE_NOTSUPPORTED,
+          L"Readme.txt cannot be moved out");
+    WCHAR other[] = L"\\other.txt";
+    Check(pGet(other, &copy[0], FS_COPYFLAGS_OVERWRITE, nullptr) == FS_FILE_NOTFOUND, L"other names not found");
+    DeleteFileW(copy.c_str());
 
     wprintf(L"Copy (F5) is refused\n");
     MakeFile(w + L"copy.txt", 100);

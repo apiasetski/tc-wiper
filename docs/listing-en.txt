@@ -1,0 +1,29 @@
+NAME
+TC Wiper 1.0.0 beta
+
+CATEGORY
+File system plugin (WFX), 32-bit and 64-bit
+
+SHORT DESCRIPTION
+Securely erase files and folders: move them (F6) into the plugin panel and they are overwritten with random data and deleted.
+
+DESCRIPTION
+TC Wiper adds a "Secure Wipe" entry to Network Neighborhood. Its panel contains only "Move here to securely wipe" and two Readme files.
+
+Select files and folders in the other panel and press F6. TC Wiper shows how many files and folders will be erased and the first selected names, and erases nothing until you confirm. Then each file is:
+- overwritten once with cryptographic random data, including the unused end of its last cluster and any alternate data streams;
+- flushed to disk and truncated;
+- renamed 3 times to random names and deleted.
+Emptied folders are renamed and removed as well. A progress window with Cancel and a summary are shown.
+
+Safety: Windows and Program Files folders are refused, files with other hard links and files in use are left alone, symbolic links are removed without touching their target. F5 (Copy) never erases anything.
+
+HONEST LIMITS: on hard disks (HDD) erased content cannot be recovered. On SSDs, USB sticks and memory cards no file-level tool can guarantee that the flash chips hold no old copy; TC Wiper defeats recovery software, not a chip-level laboratory. Copies outside the file (older versions, shadow copies, cloud sync, backups) are not touched. Readme.txt in the plugin panel explains all of this in detail.
+
+BETA: this version has been tested by the author only. Try it on test files first. Erased files cannot be restored. Provided as is, without warranty.
+
+Developed using Claude Opus 5.5 Medium (Anthropic).
+
+Requirements: Total Commander with Unicode support, Windows 10 or 11.
+License: GNU GPL v3.0 or later. Source code and bug reports: https://github.com/apiasetski/tc-wiper
+Author: Andrei Piasetski

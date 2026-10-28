@@ -1,4 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // TC Wiper - Total Commander file system plugin (WFX).
+// Copyright (C) 2026 Andrei Piasetski. Developed using Claude Opus 5.5 Medium.
 //
 // The plugin panel shows a single placeholder entry. Files moved into it
 // with F6 are not stored anywhere. While Total Commander hands over the
@@ -14,12 +16,24 @@
 #include <vector>
 #include <algorithm>
 #include "wfx_api.h"
+#include "version.h"
 
 extern "C" IMAGE_DOS_HEADER __ImageBase;
 
 static const wchar_t kTitle[]       = L"TC Wiper";
 static const wchar_t kPlaceholder[] = L"Move here to securely wipe";
 static const char    kRootName[]    = "Secure Wipe";
+
+// Readme files listed in the panel after the placeholder (RCDATA in tcwiper.rc).
+struct ReadmeEntry {
+    const wchar_t* name;
+    int resId;
+};
+static const ReadmeEntry kReadmes[] = {
+    { L"Readme.txt",    2 },
+    { L"Readme_ru.txt", 3 },
+};
+static const int kReadmeCount = sizeof(kReadmes) / sizeof(kReadmes[0]);
 
 static const DWORD  kChunk        = 1024 * 1024;  // overwrite buffer size
 static const int    kRenamePasses = 3;            // renames before delete
@@ -702,6 +716,40 @@ static int WipeSingle(const std::wstring& local, const std::wstring& remote)
 }
 
 // ---------------------------------------------------------------------------
+// Readme entries, stored as resources inside the plugin
+
+static bool ReadmeData(int resId, const BYTE*& data, DWORD& size)
+{
+    HMODULE mod = reinterpret_cast<HMODULE>(&__ImageBase);
+    HRSRC res = FindResourceW(mod, MAKEINTRESOURCEW(resId), MAKEINTRESOURCEW(10) /* RT_RCDATA */);
+    HGLOBAL mem = res ? LoadResource(mod, res) : nullptr;
+    data = mem ? static_cast<const BYTE*>(LockResource(mem)) : nullptr;
+    size = res ? SizeofResource(mod, res) : 0;
+    return data != nullptr;
+}
+
+// Returns the readme's resource id, or 0 if the name is not a readme.
+static int FindReadme(const wchar_t* remote)
+{
+    if (!remote || remote[0] != L'\\') return 0;
+    for (const auto& r : kReadmes)
+        if (lstrcmpiW(remote + 1, r.name) == 0) return r.resId;
+    return 0;
+}
+
+// The readme shows the plugin file's own date, so it stays the same.
+static FILETIME PluginFileTime()
+{
+    FILETIME ft = {};
+    wchar_t path[MAX_PATH];
+    WIN32_FILE_ATTRIBUTE_DATA fa;
+    if (GetModuleFileNameW(reinterpret_cast<HMODULE>(&__ImageBase), path, MAX_PATH) &&
+        GetFileAttributesExW(path, GetFileExInfoStandard, &fa))
+        ft = fa.ftLastWriteTime;
+    return ft;
+}
+
+// ---------------------------------------------------------------------------
 // Exported WFX functions (Unicode)
 
 extern "C" {
@@ -723,17 +771,67 @@ HANDLE __stdcall FsFindFirstW(WCHAR* Path, WIN32_FIND_DATAW* FindData)
     FindData->dwFileAttributes = FILE_ATTRIBUTE_NORMAL;
     GetSystemTimeAsFileTime(&FindData->ftLastWriteTime);
     lstrcpynW(FindData->cFileName, kPlaceholder, MAX_PATH);
-    return reinterpret_cast<HANDLE>(1);
+    return reinterpret_cast<HANDLE>(new int(1));  // next entry to return
 }
 
-BOOL __stdcall FsFindNextW(HANDLE, WIN32_FIND_DATAW*)
+// Following entries: the readme files.
+BOOL __stdcall FsFindNextW(HANDLE Hdl, WIN32_FIND_DATAW* FindData)
 {
-    return FALSE;
+    int* next = reinterpret_cast<int*>(Hdl);
+    const BYTE* data;
+    DWORD size;
+    if (!next || *next < 1 || *next > kReadmeCount)
+        return FALSE;
+    const ReadmeEntry& readme = kReadmes[*next - 1];
+    ++*next;
+    if (!ReadmeData(readme.resId, data, size))
+        return FALSE;
+    ZeroMemory(FindData, sizeof(*FindData));
+    FindData->dwFileAttributes = FILE_ATTRIBUTE_READONLY;
+    FindData->nFileSizeLow = size;
+    FindData->ftLastWriteTime = PluginFileTime();
+    lstrcpynW(FindData->cFileName, readme.name, MAX_PATH);
+    return TRUE;
 }
 
-int __stdcall FsFindClose(HANDLE)
+int __stdcall FsFindClose(HANDLE Hdl)
 {
+    delete reinterpret_cast<int*>(Hdl);
     return 0;
+}
+
+// Copies a readme out of the plugin. TC uses this for F3, F5 and for
+// opening it with Enter (FS_EXEC_YOURSELF).
+int __stdcall FsGetFileW(WCHAR* RemoteName, WCHAR* LocalName, int CopyFlags, RemoteInfoStruct*)
+{
+    const BYTE* data;
+    DWORD size;
+    int resId = FindReadme(RemoteName);
+    if (!resId || !ReadmeData(resId, data, size))
+        return FS_FILE_NOTFOUND;
+    if (CopyFlags & FS_COPYFLAGS_MOVE)
+        return FS_FILE_NOTSUPPORTED;
+    std::wstring local = LongPath(LocalName);
+    if (!(CopyFlags & FS_COPYFLAGS_OVERWRITE) && GetFileAttributesW(local.c_str()) != INVALID_FILE_ATTRIBUTES)
+        return FS_FILE_EXISTS;
+
+    Progress pr;
+    pr.source = RemoteName;
+    pr.target = LocalName;
+    pr.total = size;
+    if (ReportProgress(pr, true))
+        return FS_FILE_USERABORT;
+    HANDLE h = CreateFileW(local.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE)
+        return FS_FILE_WRITEERROR;
+    DWORD written = 0;
+    BOOL ok = WriteFile(h, data, size, &written, nullptr) && written == size;
+    CloseHandle(h);
+    if (!ok)
+        return FS_FILE_WRITEERROR;
+    pr.done = size;
+    ReportProgress(pr, false);
+    return FS_FILE_OK;
 }
 
 // Folders "created" in the plugin are not stored; they are only counted.
@@ -777,8 +875,12 @@ int __stdcall FsPutFileW(WCHAR* LocalName, WCHAR* RemoteName, int CopyFlags)
     return FS_FILE_OK;
 }
 
-int __stdcall FsExecuteFileW(HWND MainWin, WCHAR*, WCHAR* Verb)
+int __stdcall FsExecuteFileW(HWND MainWin, WCHAR* RemoteName, WCHAR* Verb)
 {
+    // TC copies the readme to a temporary folder and opens it with the
+    // program associated with .txt files.
+    if (FindReadme(RemoteName))
+        return Verb && wcsncmp(Verb, L"open", 4) == 0 ? FS_EXEC_YOURSELF : FS_EXEC_ERROR;
     if (Verb && (wcsncmp(Verb, L"open", 4) == 0 || wcsncmp(Verb, L"properties", 10) == 0)) {
 #ifndef TCWIPER_TEST
         MessageBoxW(MainWin,
@@ -786,7 +888,13 @@ int __stdcall FsExecuteFileW(HWND MainWin, WCHAR*, WCHAR* Verb)
                     L"to send them here.\n\n"
                     L"After you confirm, their contents are overwritten with random data, "
                     L"the names are scrambled and the files are deleted.\n\n"
-                    L"Windows and Program Files folders are protected.",
+                    L"Windows and Program Files folders are protected. "
+                    L"Open Readme.txt for details on how secure erasing is on HDDs and SSDs.\n\n"
+                    L"TC Wiper " TCW_VERSION_TEXT L"\n"
+                    TCW_COPYRIGHT L"\n"
+                    L"License: " TCW_LICENSE L"\n"
+                    TCW_URL L"\n\n"
+                    TCW_AI_NOTE L".",
                     kTitle, MB_OK | MB_ICONINFORMATION);
 #else
         (void)MainWin;
@@ -819,9 +927,22 @@ HANDLE __stdcall FsFindFirst(char* Path, WIN32_FIND_DATAA* FindData)
     return h;
 }
 
-BOOL __stdcall FsFindNext(HANDLE, WIN32_FIND_DATAA*)
+BOOL __stdcall FsFindNext(HANDLE Hdl, WIN32_FIND_DATAA* FindData)
 {
-    return FALSE;
+    WIN32_FIND_DATAW w;
+    if (!FsFindNextW(Hdl, &w)) return FALSE;
+    ZeroMemory(FindData, sizeof(*FindData));
+    FindData->dwFileAttributes = w.dwFileAttributes;
+    FindData->nFileSizeLow     = w.nFileSizeLow;
+    FindData->ftLastWriteTime  = w.ftLastWriteTime;
+    CopyAnsi(FindData->cFileName, MAX_PATH, ToAnsi(w.cFileName));
+    return TRUE;
+}
+
+int __stdcall FsGetFile(char* RemoteName, char* LocalName, int CopyFlags, RemoteInfoStruct* ri)
+{
+    std::wstring remote = ToWide(RemoteName), local = ToWide(LocalName);
+    return FsGetFileW(&remote[0], &local[0], CopyFlags, ri);
 }
 
 BOOL __stdcall FsMkDir(char* Path)

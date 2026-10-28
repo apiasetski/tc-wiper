@@ -15,3 +15,5 @@ EXPORTS
     FsExecuteFile
     FsExecuteFileW
     FsGetDefRootName
+    FsGetFile
+    FsGetFileW

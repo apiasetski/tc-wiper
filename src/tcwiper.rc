@@ -1,0 +1,42 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+#include <winver.h>
+#include "version.h"
+
+// Icon Total Commander shows for the plugin in Network Neighborhood.
+// Regenerate tcwiper.ico with tools\make_icon.ps1.
+1 ICON "tcwiper.ico"
+
+// Readme files shown in the plugin panel (see kReadmes in tcwiper.cpp).
+2 RCDATA "..\\docs\\TCWiper-Readme.txt"
+3 RCDATA "..\\docs\\TCWiper-Readme.ru.txt"
+
+// Shown in Windows Explorer: file Properties > Details.
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION     TCW_VERSION_MAJOR, TCW_VERSION_MINOR, TCW_VERSION_PATCH, 0
+PRODUCTVERSION  TCW_VERSION_MAJOR, TCW_VERSION_MINOR, TCW_VERSION_PATCH, 0
+FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
+FILEFLAGS       VS_FF_PRERELEASE
+FILEOS          VOS_NT_WINDOWS32
+FILETYPE        VFT_DLL
+FILESUBTYPE     0
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName",      TCW_AUTHOR
+            VALUE "FileDescription",  "TC Wiper - secure wipe plugin for Total Commander"
+            VALUE "FileVersion",      TCW_VERSION_TEXT
+            VALUE "InternalName",     "TCWiper"
+            VALUE "LegalCopyright",   TCW_COPYRIGHT ". " TCW_LICENSE "."
+            VALUE "OriginalFilename", "TCWiper.wfx"
+            VALUE "ProductName",      "TC Wiper"
+            VALUE "ProductVersion",   TCW_VERSION_TEXT
+            VALUE "Comments",         TCW_AI_NOTE ". " TCW_URL
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END

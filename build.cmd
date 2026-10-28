@@ -32,8 +32,9 @@ call "%VSDIR%\VC\Auxiliary\Build\vcvarsall.bat" %1 >nul || exit /b 1
 set "OBJ=%ROOT%build\obj\%1"
 if not exist "%OBJ%" mkdir "%OBJ%"
 echo Building %2 (%1)...
+rc /nologo /fo "%OBJ%\tcwiper.res" "%ROOT%src\tcwiper.rc" || exit /b 1
 cl /nologo /utf-8 /std:c++17 /EHsc /W4 /WX /O2 /MT /LD /DUNICODE /D_UNICODE /Fo"%OBJ%\\" ^
-   "%ROOT%src\tcwiper.cpp" ^
+   "%ROOT%src\tcwiper.cpp" "%OBJ%\tcwiper.res" ^
    /link /DEF:"%ROOT%src\tcwiper.def" /OUT:"%ROOT%build\%2" /IMPLIB:"%OBJ%\tcwiper.lib" ^
    bcrypt.lib user32.lib gdi32.lib comctl32.lib || exit /b 1
 endlocal & exit /b 0
@@ -45,8 +46,9 @@ call "%VSDIR%\VC\Auxiliary\Build\vcvarsall.bat" %1 >nul || exit /b 1
 set "OUT=%ROOT%build\test\%1"
 if not exist "%OUT%" mkdir "%OUT%"
 echo Building tests (%1)...
+rc /nologo /fo "%OUT%\tcwiper.res" "%ROOT%src\tcwiper.rc" || exit /b 1
 cl /nologo /utf-8 /std:c++17 /EHsc /W4 /WX /O2 /MT /LD /DUNICODE /D_UNICODE /DTCWIPER_TEST /Fo"%OUT%\\" ^
-   "%ROOT%src\tcwiper.cpp" ^
+   "%ROOT%src\tcwiper.cpp" "%OUT%\tcwiper.res" ^
    /link /DEF:"%ROOT%src\tcwiper.def" /OUT:"%OUT%\tcwiper_test.dll" /IMPLIB:"%OUT%\tcwiper_test.lib" ^
    bcrypt.lib user32.lib gdi32.lib comctl32.lib || exit /b 1
 cl /nologo /utf-8 /std:c++17 /EHsc /W4 /O2 /MT /DUNICODE /D_UNICODE /Fo"%OUT%\\" /Fe"%OUT%\test_harness.exe" ^
