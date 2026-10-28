@@ -2,6 +2,13 @@
 #include <winver.h>
 #include "version.h"
 
+// Must match the real file name; build.cmd passes /d TCW_X64 for the 64-bit build.
+#ifdef TCW_X64
+#define TCW_FILENAME "TCWiper.wfx64"
+#else
+#define TCW_FILENAME "TCWiper.wfx"
+#endif
+
 // Icon Total Commander shows for the plugin in Network Neighborhood.
 // Regenerate tcwiper.ico with tools\make_icon.ps1.
 1 ICON "tcwiper.ico"
@@ -29,7 +36,7 @@ BEGIN
             VALUE "FileVersion",      TCW_VERSION_TEXT
             VALUE "InternalName",     "TCWiper"
             VALUE "LegalCopyright",   TCW_COPYRIGHT ". " TCW_LICENSE "."
-            VALUE "OriginalFilename", "TCWiper.wfx"
+            VALUE "OriginalFilename", TCW_FILENAME
             VALUE "ProductName",      "TC Wiper"
             VALUE "ProductVersion",   TCW_VERSION_TEXT
             VALUE "Comments",         TCW_AI_NOTE ". " TCW_URL

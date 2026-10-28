@@ -35,7 +35,27 @@ version=$version
 
 $zip = Join-Path $dist "tcwiper_$fileVersion.zip"
 Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip
-$hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
-"$hash  $(Split-Path $zip -Leaf)" | Set-Content "$zip.sha256" -Encoding ascii
-Write-Host "Created $zip"
-Write-Host "SHA-256 $hash"
+
+# Source archive matching the binaries (required by the GPL when distributing):
+# every file in the project except build output, inside one top-level folder.
+$srcName  = "tcwiper_${fileVersion}_src"
+$srcStage = Join-Path $root "build\$srcName"
+if (Test-Path $srcStage) { Remove-Item $srcStage -Recurse -Force }
+$files = git -C $root ls-files --cached --others --exclude-standard
+if ($LASTEXITCODE -ne 0) { throw 'git ls-files failed' }
+foreach ($f in $files) {
+    $src = Join-Path $root $f
+    if (-not (Test-Path $src -PathType Leaf)) { continue }  # deleted but not yet committed
+    $dst = Join-Path $srcStage $f
+    New-Item -ItemType Directory -Force (Split-Path $dst) | Out-Null
+    Copy-Item $src $dst
+}
+$srcZip = Join-Path $dist "$srcName.zip"
+Compress-Archive -Path $srcStage -DestinationPath $srcZip
+
+foreach ($z in $zip, $srcZip) {
+    $hash = (Get-FileHash $z -Algorithm SHA256).Hash.ToLower()
+    "$hash  $(Split-Path $z -Leaf)" | Set-Content "$z.sha256" -Encoding ascii
+    Write-Host "Created $z"
+    Write-Host "SHA-256 $hash"
+}

@@ -32,10 +32,13 @@ call "%VSDIR%\VC\Auxiliary\Build\vcvarsall.bat" %1 >nul || exit /b 1
 set "OBJ=%ROOT%build\obj\%1"
 if not exist "%OBJ%" mkdir "%OBJ%"
 echo Building %2 (%1)...
-rc /nologo /fo "%OBJ%\tcwiper.res" "%ROOT%src\tcwiper.rc" || exit /b 1
-cl /nologo /utf-8 /std:c++17 /EHsc /W4 /WX /O2 /MT /LD /DUNICODE /D_UNICODE /Fo"%OBJ%\\" ^
+set "RCDEF="
+if /i "%1"=="x64" set "RCDEF=/d TCW_X64"
+rc /nologo %RCDEF% /fo "%OBJ%\tcwiper.res" "%ROOT%src\tcwiper.rc" || exit /b 1
+rem /guard:cf = Control Flow Guard (exploit protection)
+cl /nologo /utf-8 /std:c++17 /EHsc /W4 /WX /O2 /MT /LD /guard:cf /DUNICODE /D_UNICODE /Fo"%OBJ%\\" ^
    "%ROOT%src\tcwiper.cpp" "%OBJ%\tcwiper.res" ^
-   /link /DEF:"%ROOT%src\tcwiper.def" /OUT:"%ROOT%build\%2" /IMPLIB:"%OBJ%\tcwiper.lib" ^
+   /link /DEF:"%ROOT%src\tcwiper.def" /OUT:"%ROOT%build\%2" /IMPLIB:"%OBJ%\tcwiper.lib" /GUARD:CF ^
    bcrypt.lib user32.lib gdi32.lib comctl32.lib || exit /b 1
 endlocal & exit /b 0
 
