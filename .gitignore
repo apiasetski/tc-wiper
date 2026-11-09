@@ -5,3 +5,4 @@ dist/
 *.exp
 *.lib
 *.pdb
+publish/
