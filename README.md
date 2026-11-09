@@ -1,6 +1,6 @@
 # TC Wiper
 
-**Version 1.0.0 beta** · Secure wipe plugin (WFX) for [Total Commander](https://www.ghisler.com/), 32-bit and 64-bit.
+**Version 1.0.1 beta** · Secure wipe plugin (WFX) for [Total Commander](https://www.ghisler.com/), 32-bit and 64-bit.
 
 Its panel shows *Move here to securely wipe* plus two readme files. Files and folders you
 **move (F6)** into it are overwritten with random data, renamed several times to random
@@ -13,7 +13,7 @@ names, and deleted. Nothing is stored anywhere.
 
 ## Install
 
-1. Download `tcwiper_1.0.0_beta.zip` (or build it yourself with `build.cmd`; it lands in `dist\`).
+1. Download `tcwiper_1.0.1_beta.zip` (or build it yourself with `build.cmd`; it lands in `dist\`).
 2. In Total Commander, open the zip (Enter or Ctrl+PgDn on it) and confirm the plugin installation.
 3. Open *Network Neighborhood* (`\\\`) in one panel and enter **Secure Wipe**.
 
@@ -33,6 +33,33 @@ Each zip has a matching `.sha256` checksum file.
 - **Readme.txt** (English) and **Readme_ru.txt** (Russian) in the plugin panel explain in
   detail how files are erased and how secure that is on HDDs and SSDs. F3 views them, F5
   copies them out.
+
+## Scripting: WiperGo
+
+Scripts that run inside Total Commander, such as the Autorun plugin, can call the exported function
+`WiperGo` to wipe the selection of the active panel without the plugin panel, for example
+from an `em_` command or a hotkey. It takes no parameters and uses the same confirmation,
+progress window and summary as F6. With nothing selected it uses the item under the cursor.
+
+```
+Static sLibName = "TCWiper.wfx" & (auX64 ? "64" : "")
+Static sLibPath = COMMANDER_PATH & "\Plugins\wfx\TCWiper\" & sLibName
+
+Local hDll = DllCall("LoadLibrary", "wstr", sLibPath, "handle")
+If hDll = 0 Then Return MsgBox("Can't load " & sLibPath)
+Local nRes = DllCall(sLibName & "\WiperGo", "int")
+DllCall("FreeLibrary", "handle", hDll)
+```
+
+| Return value | Meaning |
+|---|---|
+| 0 | Wiped, summary shown |
+| 1 | The user answered No |
+| 2 | Nothing selected |
+| -1 | Error; TC Wiper has already shown a message |
+
+Works for regular folders only (no archives, FTP or plugin panels), in Brief, Full and
+Comments views. Thumbnail view is refused because its rows do not map to single files.
 
 ## Safety rules built in
 
@@ -77,8 +104,10 @@ with your Windows version, Total Commander version and 32/64-bit.
 - Version, author and license strings: `src\version.h` (single place; `package.ps1` reads it).
 - Readme texts: `docs\TCWiper-Readme.txt` and `docs\TCWiper-Readme.ru.txt`, embedded into
   the plugin when building. Catalog descriptions: `docs\listing-en.txt`, `docs\listing-ru.txt`.
-- `build.cmd` builds both plugins and the release zip; `build.cmd test` also runs
-  `tests\test_harness.cpp` against a test build (message boxes auto-answered) for 32 and 64 bit.
+- `build.cmd` builds both plugins and the release zip (it refuses to overwrite zips of a
+  version that already exists in `dist\`). `build.cmd test` builds both plugins and runs
+  `tests\test_harness.cpp` against a test build (message boxes auto-answered) for 32 and
+  64 bit, without packaging.
 - The icon (`src\tcwiper.ico`, embedded via `src\tcwiper.rc`) is drawn by
   `tools\make_icon.ps1`; rerun it after changing the design.
 - Requires Visual Studio 2022 Build Tools with the C++ workload.

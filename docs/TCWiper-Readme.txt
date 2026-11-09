@@ -2,7 +2,7 @@
  TC WIPER - HOW FILES ARE ERASED, AND HOW SECURE IT REALLY IS
 ===============================================================================
 
- TC Wiper 1.0.0 beta - secure wipe plugin for Total Commander
+ TC Wiper 1.0.1 beta - secure wipe plugin for Total Commander
  Copyright (C) 2026 Andrei Piasetski
  License: GNU General Public License v3.0 or later (see LICENSE.txt)
  Source code and bug reports: https://github.com/apiasetski/tc-wiper
@@ -362,6 +362,12 @@ your situation.
   * Long paths over 260 characters are supported (\\?\ prefix).
   * Protected folders: the Windows folder and all Program Files folders.
     This also protects the 32-bit plugin from Windows' folder redirection.
+  * Scripts: the exported function WiperGo (no parameters) wipes the
+    selection of the active panel, or the item under the cursor, with the
+    same confirmation as F6. It is meant for scripts running inside Total
+    Commander, e.g. the Autorun plugin, so wiping can be put on a hotkey.
+    Returns 0 = wiped, 1 = cancelled, 2 = nothing selected, -1 = error
+    (a message was shown). Regular folders only; not in thumbnail view.
 
 
 -------------------------------------------------------------------------------

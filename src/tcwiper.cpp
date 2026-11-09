@@ -7,6 +7,10 @@
 // files one by one, the plugin only collects them. When the operation ends
 // it asks for confirmation (with counts and names) and then overwrites each
 // file with random data, scrambles its name and deletes it.
+//
+// Scripts running inside Total Commander (e.g. the Autorun plugin) can also
+// call the exported function WiperGo to wipe the selection of the active
+// panel directly, without moving it into the plugin panel.
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -59,6 +63,7 @@ struct Batch {
     bool copyRefused = false;
     std::vector<Entry> files;
     std::vector<std::wstring> remoteDirs;
+    std::wstring base;  // source folder if known (WiperGo), else derived from the files
 };
 static Batch g_batch;
 
@@ -624,21 +629,22 @@ static void ShowSummary(const Result& res)
 // ---------------------------------------------------------------------------
 // Batch processing
 
-static void WipeBatch(const Batch& b)
+// Returns false if the user did not confirm.
+static bool WipeBatch(const Batch& b)
 {
     // TC should leave moved files for the plugin to remove. If they are all
     // gone already, TC deleted them itself and they were never wiped.
     size_t present = 0;
     for (const auto& f : b.files)
         if (GetFileAttributesW(LongPath(f.local).c_str()) != INVALID_FILE_ATTRIBUTES) ++present;
-    if (present == 0) {
+    if (!b.files.empty() && present == 0) {
         ShowMessage(L"The files were already removed by Total Commander before TC Wiper could "
                     L"erase them, so they were NOT securely wiped.", MB_ICONERROR);
-        return;
+        return true;
     }
 
     if (!AskYesNo(ConfirmText(b)))
-        return;
+        return false;
 
     Progress pr;
     pr.batch = true;
@@ -673,16 +679,21 @@ static void WipeBatch(const Batch& b)
     }
 
     // Remove the source folders that are now empty, deepest first.
-    std::wstring base = b.files.empty() ? std::wstring() : SourceBase(b.files.front());
+    std::wstring base = !b.base.empty() ? b.base
+                      : b.files.empty() ? std::wstring() : SourceBase(b.files.front());
     if (!base.empty()) {
         std::vector<std::wstring> dirs = b.remoteDirs;
         std::sort(dirs.begin(), dirs.end(),
                   [](const std::wstring& x, const std::wstring& y) { return x.size() > y.size(); });
         for (const auto& d : dirs) {
-            std::wstring local = LongPath(base + d.substr(1));
+            std::wstring plain = base + d.substr(1);
+            if (IsProtected(plain)) continue;
+            std::wstring local = LongPath(plain);
             DWORD attrs = GetFileAttributesW(local.c_str());
+            // A folder link (junction) is removed without touching its target.
+            bool link = attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_REPARSE_POINT);
             if (attrs == INVALID_FILE_ATTRIBUTES || !(attrs & FILE_ATTRIBUTE_DIRECTORY) ||
-                !IsFolderEmpty(local))
+                (!link && !IsFolderEmpty(local)))
                 continue;
             if (attrs & FILE_ATTRIBUTE_READONLY)
                 SetFileAttributesW(local.c_str(), attrs & ~FILE_ATTRIBUTE_READONLY);
@@ -693,6 +704,7 @@ static void WipeBatch(const Batch& b)
     }
     CloseProgressWindow();
     ShowSummary(res);
+    return true;
 }
 
 // Used when TC hands over a file outside a START/END bracket.
@@ -713,6 +725,186 @@ static int WipeSingle(const std::wstring& local, const std::wstring& remote)
         ShowSummary(res);
     }
     return rc;
+}
+
+// ---------------------------------------------------------------------------
+// WiperGo: wipes the selection of TC's active panel. Called by scripts that
+// run inside Total Commander, e.g. Autorun: DllCall("TCWiper.wfx64\WiperGo").
+
+// Return codes of WiperGo.
+static const int kGoDone      = 0;   // wiped (summary shown)
+static const int kGoCancelled = 1;   // the user answered No
+static const int kGoNothing   = 2;   // nothing selected
+static const int kGoError     = -1;  // error, a message was shown
+
+// Total Commander's documented window messages.
+static const UINT kTcGetInfo     = WM_USER + 50;  // wParam: what to return
+static const UINT kTcCommand     = WM_USER + 51;  // wParam: cm_ command number
+static const int  kCmRereadSource = 540;
+
+struct TcWindowSearch {
+    DWORD pid;
+    HWND wnd;
+};
+
+static BOOL CALLBACK FindTcWindowProc(HWND h, LPARAM lp)
+{
+    auto* s = reinterpret_cast<TcWindowSearch*>(lp);
+    DWORD pid = 0;
+    wchar_t cls[32];
+    GetWindowThreadProcessId(h, &pid);
+    if (pid == s->pid && GetClassNameW(h, cls, 32) && wcscmp(cls, L"TTOTAL_CMD") == 0) {
+        s->wnd = h;
+        return FALSE;
+    }
+    return TRUE;
+}
+
+// TC's main window in this process, or null when not loaded by TC.
+static HWND TcMainWindow()
+{
+    TcWindowSearch s = { GetCurrentProcessId(), nullptr };
+    EnumWindows(FindTcWindowProc, reinterpret_cast<LPARAM>(&s));
+    return s.wnd;
+}
+
+static std::wstring g_tcReply;
+
+// Receives TC's answer to a 'G'+'W' request.
+static LRESULT CALLBACK TcReplyWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
+{
+    if (msg == WM_COPYDATA) {
+        auto* cds = reinterpret_cast<const COPYDATASTRUCT*>(lp);
+        if (cds && cds->dwData == ('R' + 256 * 'W') && cds->lpData) {
+            g_tcReply.assign(static_cast<const wchar_t*>(cds->lpData), cds->cbData / sizeof(wchar_t));
+            while (!g_tcReply.empty() && g_tcReply.back() == L'\0') g_tcReply.pop_back();
+        }
+        return TRUE;
+    }
+    return DefWindowProcW(h, msg, wp, lp);
+}
+
+// Asks TC for panel information: "SP" = source path, "SN" = name under the
+// cursor. TC answers with WM_COPYDATA to our window before SendMessage returns.
+static std::wstring AskTc(HWND tc, const char* what)
+{
+    HINSTANCE inst = reinterpret_cast<HINSTANCE>(&__ImageBase);
+    WNDCLASSEXW wc = { sizeof(wc) };
+    wc.lpfnWndProc   = TcReplyWndProc;
+    wc.hInstance     = inst;
+    wc.lpszClassName = L"TCWiperReply";
+    RegisterClassExW(&wc);  // fails harmlessly if already registered
+    HWND reply = CreateWindowExW(0, wc.lpszClassName, L"", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, inst, nullptr);
+    if (!reply) return std::wstring();
+
+    g_tcReply.clear();
+    COPYDATASTRUCT cds = { 'G' + 256 * 'W', (DWORD)strlen(what) + 1, const_cast<char*>(what) };
+    SendMessageW(tc, WM_COPYDATA, reinterpret_cast<WPARAM>(reply), reinterpret_cast<LPARAM>(&cds));
+    DestroyWindow(reply);
+    return g_tcReply;
+}
+
+// Reads the selected names of the active panel. With nothing selected, the
+// item under the cursor is used, like TC does for F6.
+static int ReadPanelSelection(HWND tc, std::wstring& base, std::vector<std::wstring>& names)
+{
+    const wchar_t* unsupported = L"TC Wiper can only erase files in a regular folder. "
+                                 L"Archives, FTP and plugin panels are not supported.";
+    base = AskTc(tc, "SP");
+    if (base.empty()) {
+        ShowMessage(L"Total Commander did not report the current folder.", MB_ICONERROR);
+        return kGoError;
+    }
+    if (base.back() != L'\\') base += L'\\';
+    DWORD attrs = GetFileAttributesW(LongPath(base).c_str());
+    if (attrs == INVALID_FILE_ATTRIBUTES || !(attrs & FILE_ATTRIBUTE_DIRECTORY)) {
+        ShowMessage(unsupported, MB_ICONERROR);
+        return kGoError;
+    }
+
+    bool left = SendMessageW(tc, kTcGetInfo, 1000, 0) == 1;
+    int selected = (int)SendMessageW(tc, kTcGetInfo, left ? 1005 : 1006, 0);
+    if (selected <= 0) {
+        std::wstring name = AskTc(tc, "SN");
+        if (name.empty() || name == L"..") return kGoNothing;
+        names.push_back(name);
+    } else {
+        // The file list is a list box whose rows read "name<TAB>size<TAB>...".
+        HWND list = reinterpret_cast<HWND>(SendMessageW(tc, kTcGetInfo, left ? 1 : 2, 0));
+        int count = list ? (int)SendMessageW(list, LB_GETCOUNT, 0, 0) : 0;
+        for (int i = 0; i < count; ++i) {
+            if (SendMessageW(list, LB_GETSEL, i, 0) <= 0) continue;
+            int len = (int)SendMessageW(list, LB_GETTEXTLEN, i, 0);
+            if (len <= 0 || len > 32767) continue;
+            std::wstring row(len + 1, L'\0');
+            row.resize((size_t)SendMessageW(list, LB_GETTEXT, i, reinterpret_cast<LPARAM>(&row[0])));
+            std::wstring name = row.substr(0, row.find(L'\t'));
+            if (!name.empty() && name != L"..") names.push_back(name);
+        }
+        // Thumbnail view packs several files into one row, so the rows do not
+        // match the selection. Never guess which files the user meant.
+        if ((int)names.size() != selected) {
+            ShowMessage(L"TC Wiper could not read the selected files in this view. "
+                        L"Switch the panel to Brief or Full view and try again.", MB_ICONERROR);
+            return kGoError;
+        }
+    }
+
+    for (auto& name : names) {
+        if (GetFileAttributesW(LongPath(base + name).c_str()) != INVALID_FILE_ATTRIBUTES) continue;
+        // Folders may be shown as [name] (option "Show folder names in brackets").
+        if (name.size() > 2 && name.front() == L'[' && name.back() == L']') {
+            std::wstring inner = name.substr(1, name.size() - 2);
+            if (GetFileAttributesW(LongPath(base + inner).c_str()) != INVALID_FILE_ATTRIBUTES) {
+                name = inner;
+                continue;
+            }
+        }
+        ShowMessage(L"TC Wiper could not find the selected item\n" + base + name +
+                    L"\n\nNothing was erased.", MB_ICONERROR);
+        return kGoError;
+    }
+    return kGoDone;
+}
+
+// Adds the contents of a selected folder to the batch, subfolders first.
+static void AddFolder(Batch& b, const std::wstring& base, const std::wstring& rel)
+{
+    b.remoteDirs.push_back(L"\\" + rel);
+    DWORD attrs = GetFileAttributesW(LongPath(base + rel).c_str());
+    if (attrs & FILE_ATTRIBUTE_REPARSE_POINT)
+        return;  // folder link: only the link is removed, the target is never entered
+    WIN32_FIND_DATAW fd;
+    HANDLE find = FindFirstFileExW(LongPath(base + rel + L"\\*").c_str(), FindExInfoBasic, &fd,
+                                   FindExSearchNameMatch, nullptr, 0);
+    if (find == INVALID_HANDLE_VALUE) return;
+    do {
+        std::wstring name = fd.cFileName;
+        if (name == L"." || name == L"..") continue;
+        std::wstring child = rel + L"\\" + name;
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+            AddFolder(b, base, child);
+        else
+            b.files.push_back({ base + child, L"\\" + child });
+    } while (FindNextFileW(find, &fd));
+    FindClose(find);
+}
+
+// Wipes the named items (files or folders) of folder `base`, which ends with \.
+static int WipeItems(const std::wstring& base, const std::vector<std::wstring>& names)
+{
+    Batch b;
+    b.base = base;
+    for (const auto& name : names) {
+        DWORD attrs = GetFileAttributesW(LongPath(base + name).c_str());
+        if (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY))
+            AddFolder(b, base, name);
+        else
+            b.files.push_back({ base + name, L"\\" + name });
+    }
+    if (b.files.empty() && b.remoteDirs.empty())
+        return kGoNothing;
+    return WipeBatch(b) ? kGoDone : kGoCancelled;
 }
 
 // ---------------------------------------------------------------------------
@@ -905,6 +1097,34 @@ int __stdcall FsExecuteFileW(HWND MainWin, WCHAR* RemoteName, WCHAR* Verb)
 }
 
 // ---------------------------------------------------------------------------
+// Exported for scripts (not part of the WFX interface)
+
+// Wipes the selected files and folders of the active panel after the usual
+// confirmation. Must be called on TC's main thread from inside Total
+// Commander. Returns 0 = wiped, 1 = cancelled, 2 = nothing selected, -1 = error.
+int __stdcall WiperGo()
+{
+    static bool busy = false;
+    if (busy || g_batch.active) return kGoError;
+    HWND tc = TcMainWindow();
+    if (!tc) {
+        ShowMessage(L"WiperGo works only inside Total Commander, for example "
+                    L"from an Autorun script.", MB_ICONERROR);
+        return kGoError;
+    }
+    busy = true;
+    std::wstring base;
+    std::vector<std::wstring> names;
+    int rc = ReadPanelSelection(tc, base, names);
+    if (rc == kGoDone) {
+        rc = WipeItems(base, names);
+        if (rc == kGoDone) SendMessageW(tc, kTcCommand, kCmRereadSource, 0);
+    }
+    busy = false;
+    return rc;
+}
+
+// ---------------------------------------------------------------------------
 // Exported WFX functions (ANSI, for TC versions without Unicode support)
 
 int __stdcall FsInit(int PluginNr, tProgressProc pProgressProc, tLogProc, tRequestProc)
@@ -977,6 +1197,19 @@ void __stdcall FsGetDefRootName(char* DefRootName, int maxlen)
 __declspec(dllexport) const wchar_t* TcwTestConfirmText() { return g_testConfirm.c_str(); }
 __declspec(dllexport) const wchar_t* TcwTestSummaryText() { return g_testSummary.c_str(); }
 __declspec(dllexport) void TcwTestSetCancel(BOOL cancel) { g_testCancel = cancel != FALSE; }
+// WiperGo without TC: `names` are separated by |.
+__declspec(dllexport) int TcwTestWipeItems(const wchar_t* base, const wchar_t* names)
+{
+    std::vector<std::wstring> list;
+    std::wstring all = names;
+    for (size_t pos = 0; pos <= all.size();) {
+        size_t bar = all.find(L'|', pos);
+        if (bar == std::wstring::npos) bar = all.size();
+        if (bar > pos) list.push_back(all.substr(pos, bar - pos));
+        pos = bar + 1;
+    }
+    return WipeItems(base, list);
+}
 #endif
 
 }  // extern "C"

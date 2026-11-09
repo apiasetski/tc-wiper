@@ -19,6 +19,8 @@ typedef int    (__stdcall *tFsExecuteFileW)(HWND, WCHAR*, WCHAR*);
 typedef int    (__stdcall *tFsGetFileW)(WCHAR*, WCHAR*, int, RemoteInfoStruct*);
 typedef const wchar_t* (*tText)();
 typedef void   (*tSetCancel)(BOOL);
+typedef int    (__stdcall *tWiperGo)();
+typedef int    (*tWipeItems)(const wchar_t*, const wchar_t*);
 
 static tFsFindFirstW  pFindFirst;
 static tFsStatusInfoW pStatus;
@@ -30,6 +32,8 @@ static tFsExecuteFileW pExecute;
 static tFsGetFileW    pGet;
 static tText          pConfirm, pSummary;
 static tSetCancel     pSetCancel;
+static tWiperGo       pWiperGo;
+static tWipeItems     pWipeItems;
 
 static int g_failed;
 
@@ -143,9 +147,11 @@ int wmain(int argc, wchar_t** argv)
     pConfirm   = (tText)GetProcAddress(dll, "TcwTestConfirmText");
     pSummary   = (tText)GetProcAddress(dll, "TcwTestSummaryText");
     pSetCancel = (tSetCancel)GetProcAddress(dll, "TcwTestSetCancel");
+    pWiperGo   = (tWiperGo)GetProcAddress(dll, "WiperGo");
+    pWipeItems = (tWipeItems)GetProcAddress(dll, "TcwTestWipeItems");
     const char* required[] = { "FsInit", "FsFindFirst", "FsFindNext", "FsFindClose", "FsGetDefRootName",
                                "FsPutFile", "FsMkDir", "FsStatusInfo", "FsExecuteFile", "FsGetFile" };
-    bool allExports = pInit && pFindFirst && pStatus && pPut && pMkDir && pFindNext && pFindClose && pExecute && pGet && pConfirm && pSummary && pSetCancel;
+    bool allExports = pInit && pFindFirst && pStatus && pPut && pMkDir && pFindNext && pFindClose && pExecute && pGet && pConfirm && pSummary && pSetCancel && pWiperGo && pWipeItems;
     for (const char* name : required) allExports = allExports && GetProcAddress(dll, name);
     Check(allExports, L"all WFX functions exported with undecorated names");
     if (!allExports) return 1;
@@ -322,6 +328,30 @@ int wmain(int argc, wchar_t** argv)
     wprintf(L"File outside a START/END bracket\n");
     MakeFile(w + L"single.txt", 100);
     Check(Put(w, L"single.txt") == FS_FILE_OK && !Exists(w + L"single.txt"), L"wiped immediately after confirmation");
+
+    wprintf(L"WiperGo (selection of the active panel)\n");
+    Check(pWiperGo() == -1 && Contains(pSummary(), L"only inside Total Commander"),
+          L"refuses to run outside Total Commander");
+    std::wstring go = w + L"go\\";
+    CreateDirectoryW(go.c_str(), nullptr);
+    CreateDirectoryW((go + L"Docs").c_str(), nullptr);
+    CreateDirectoryW((go + L"Docs\\Deep").c_str(), nullptr);
+    CreateDirectoryW((go + L"Empty dir").c_str(), nullptr);
+    MakeFile(go + L"Docs\\d1.txt", 700);
+    MakeFile(go + L"Docs\\Deep\\d2.txt", 800);
+    MakeFile(go + L"файл.txt", 100);
+    MakeFile(go + L"keep.txt", 100, 'K');
+    Check(pWipeItems(go.c_str(), L"Docs|Empty dir|файл.txt") == 0, L"returns 0 after wiping");
+    confirm = pConfirm();
+    Check(Contains(confirm, L"erase 3 files in 3 folders forever.") && Contains(confirm, L"• Docs") &&
+          Contains(confirm, L"• Empty dir") && Contains(confirm, L"• файл.txt"),
+          L"confirmation counts files inside selected folders and lists the selection");
+    Check(!Exists(go + L"Docs") && !Exists(go + L"Empty dir") && !Exists(go + L"файл.txt"),
+          L"selected folders (also empty ones) and files erased");
+    Check(ReadAll(go + L"keep.txt") == std::string(100, 'K'), L"unselected file untouched");
+    Check(Contains(pSummary(), L"Securely erased: 3 files and 3 folders."), L"summary after WiperGo");
+    Check(pWipeItems(go.c_str(), L"") == 2, L"returns 2 when nothing is selected");
+    DeleteTree(go);
 
     // Only the files that were meant to survive may be left; no renamed leftovers.
     int count = 0;

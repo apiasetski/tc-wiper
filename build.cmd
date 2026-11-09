@@ -1,7 +1,7 @@
 @echo off
 rem Builds TCWiper.wfx (32-bit) and TCWiper.wfx64 (64-bit) and the install zip.
-rem Usage: build.cmd          - release build + dist\TCWiper.zip
-rem        build.cmd test     - also builds and runs the test harness
+rem Usage: build.cmd          - release build + release zips in dist\
+rem        build.cmd test     - release build + test harness, no packaging
 setlocal
 set "ROOT=%~dp0"
 set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
@@ -13,12 +13,12 @@ set "PATH=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer;%PATH%"
 
 call :plugin x86 TCWiper.wfx || exit /b 1
 call :plugin x64 TCWiper.wfx64 || exit /b 1
-powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%package.ps1" || exit /b 1
-
 if /i "%~1"=="test" (
     call :test x86 || exit /b 1
     call :test x64 || exit /b 1
+    exit /b 0
 )
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%package.ps1" || exit /b 1
 exit /b 0
 
 :novs

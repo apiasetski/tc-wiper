@@ -1,6 +1,15 @@
 TC Wiper - version history
 ==========================
 
+1.0.1 beta (2026-11-09)
+  * New exported function WiperGo for scripts running inside Total Commander
+    (e.g. Autorun): wipes the selected files and folders of the active panel,
+    or the item under the cursor, with the usual confirmation. Returns
+    0 = wiped, 1 = cancelled, 2 = nothing selected, -1 = error (message shown).
+    Requested by Orion9 on wincmd.ru.
+  * Folder links (junctions) inside wiped folders: only the link is removed.
+  * Empty folders inside Windows and Program Files are no longer removed.
+
 1.0.0 beta (2026-10-28)
   * First public release (beta: tested by the author only).
   * Plugin panel shows "Move here to securely wipe", Readme.txt and Readme_ru.txt.

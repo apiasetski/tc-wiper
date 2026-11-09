@@ -11,10 +11,12 @@ if ($header -notmatch '#define\s+TCW_VERSION_TEXT\s+"([^"]+)"') { throw 'TCW_VER
 $version = $Matches[1]
 $fileVersion = $version -replace '\s+', '_'
 
-foreach ($dir in $stage, $dist) {
-    if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
-    New-Item -ItemType Directory -Force $dir | Out-Null
-}
+# Published zips must keep their checksums: never rebuild an existing version.
+$existing = Get-ChildItem $dist -Filter "tcwiper_${fileVersion}*.zip" -ErrorAction SilentlyContinue
+if ($existing) { throw "dist already contains zips for version $version. Raise the version in src\version.h first." }
+
+if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+New-Item -ItemType Directory -Force $stage, $dist | Out-Null
 
 Copy-Item (Join-Path $root 'build\TCWiper.wfx')   $stage
 Copy-Item (Join-Path $root 'build\TCWiper.wfx64') $stage

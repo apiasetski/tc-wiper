@@ -17,3 +17,4 @@ EXPORTS
     FsGetDefRootName
     FsGetFile
     FsGetFileW
+    WiperGo
