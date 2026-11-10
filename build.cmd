@@ -1,5 +1,6 @@
 @echo off
-rem Builds TCWiper.wfx (32-bit) and TCWiper.wfx64 (64-bit) and the install zip.
+rem Builds TCWiper.wfx (32-bit), TCWiper.wfx64 (64-bit), TCWiperGo.exe (32-bit,
+rem for both TC versions) and the install zip.
 rem Usage: build.cmd          - release build + release zips in dist\
 rem        build.cmd test     - release build + test harness, no packaging
 setlocal
@@ -13,6 +14,7 @@ set "PATH=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer;%PATH%"
 
 call :plugin x86 TCWiper.wfx || exit /b 1
 call :plugin x64 TCWiper.wfx64 || exit /b 1
+call :exe || exit /b 1
 if /i "%~1"=="test" (
     call :test x86 || exit /b 1
     call :test x64 || exit /b 1
@@ -40,6 +42,20 @@ cl /nologo /utf-8 /std:c++17 /EHsc /W4 /WX /O2 /MT /LD /guard:cf /DUNICODE /D_UN
    "%ROOT%src\tcwiper.cpp" "%OBJ%\tcwiper.res" ^
    /link /DEF:"%ROOT%src\tcwiper.def" /OUT:"%ROOT%build\%2" /IMPLIB:"%OBJ%\tcwiper.lib" /GUARD:CF ^
    bcrypt.lib user32.lib gdi32.lib comctl32.lib || exit /b 1
+endlocal & exit /b 0
+
+rem TCWiperGo.exe: same source as a program, for TC user commands (usercmd.ini).
+:exe
+setlocal
+call "%VSDIR%\VC\Auxiliary\Build\vcvarsall.bat" x86 >nul || exit /b 1
+set "OBJ=%ROOT%build\obj\exe"
+if not exist "%OBJ%" mkdir "%OBJ%"
+echo Building TCWiperGo.exe (x86)...
+rc /nologo /d TCW_EXE /fo "%OBJ%\tcwiper.res" "%ROOT%src\tcwiper.rc" || exit /b 1
+cl /nologo /utf-8 /std:c++17 /EHsc /W4 /WX /O2 /MT /guard:cf /DUNICODE /D_UNICODE /DTCWIPER_EXE /Fo"%OBJ%\\" ^
+   "%ROOT%src\tcwiper.cpp" "%OBJ%\tcwiper.res" ^
+   /link /SUBSYSTEM:WINDOWS /OUT:"%ROOT%build\TCWiperGo.exe" /GUARD:CF ^
+   bcrypt.lib user32.lib gdi32.lib comctl32.lib shell32.lib || exit /b 1
 endlocal & exit /b 0
 
 rem Test build: same source, message boxes answered automatically.

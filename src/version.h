@@ -4,8 +4,8 @@
 
 #define TCW_VERSION_MAJOR  1
 #define TCW_VERSION_MINOR  0
-#define TCW_VERSION_PATCH  1
-#define TCW_VERSION_TEXT   "1.0.1 beta"
+#define TCW_VERSION_PATCH  2
+#define TCW_VERSION_TEXT   "1.0.2 beta"
 
 #define TCW_AUTHOR         "Andrei Piasetski"
 #define TCW_COPYRIGHT      "Copyright (C) 2026 Andrei Piasetski"

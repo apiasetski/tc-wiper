@@ -1,6 +1,14 @@
 TC Wiper - version history
 ==========================
 
+1.0.2 beta (2026-11-10)
+  * New TCWiperGo.exe for a hotkey or button without Autorun: a Total
+    Commander user command passes it the selected items with %WL, and it
+    wipes them with the usual confirmation. Works with 32-bit and 64-bit TC.
+  * WiperGo returns -1 when some items were not erased (file in use, hard
+    links, protected folder) and 1 when Cancel was pressed during the wipe;
+    before, it returned 0 in both cases. Reported by Orion9.
+
 1.0.1 beta (2026-11-09)
   * New exported function WiperGo for scripts running inside Total Commander
     (e.g. Autorun): wipes the selected files and folders of the active panel,

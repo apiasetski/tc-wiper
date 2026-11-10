@@ -2,7 +2,7 @@
  TC WIPER - HOW FILES ARE ERASED, AND HOW SECURE IT REALLY IS
 ===============================================================================
 
- TC Wiper 1.0.1 beta - secure wipe plugin for Total Commander
+ TC Wiper 1.0.2 beta - secure wipe plugin for Total Commander
  Copyright (C) 2026 Andrei Piasetski
  License: GNU General Public License v3.0 or later (see LICENSE.txt)
  Source code and bug reports: https://github.com/apiasetski/tc-wiper
@@ -366,8 +366,20 @@ your situation.
     selection of the active panel, or the item under the cursor, with the
     same confirmation as F6. It is meant for scripts running inside Total
     Commander, e.g. the Autorun plugin, so wiping can be put on a hotkey.
-    Returns 0 = wiped, 1 = cancelled, 2 = nothing selected, -1 = error
-    (a message was shown). Regular folders only; not in thumbnail view.
+    Returns 0 = everything wiped, 1 = cancelled, 2 = nothing selected,
+    -1 = error or some items not erased (a message was shown). Regular
+    folders only; not in thumbnail view.
+  * Hotkey or button without the plugin panel: TCWiperGo.exe, installed
+    next to the plugin, wipes the items listed by Total Commander's %WL
+    parameter (the selection, or the item under the cursor) with the same
+    confirmation. It works with 32-bit and 64-bit Total Commander. Add a
+    user command to usercmd.ini (in the folder of wincmd.ini) and assign it
+    a hotkey in Configuration > Misc:
+        [em_wiper]
+        cmd=%COMMANDER_PATH%\Plugins\wfx\TCWiper\TCWiperGo.exe
+        param=%WL
+    Or put the same command and parameter on a button. Its exit code is the
+    same as WiperGo's return value.
 
 
 -------------------------------------------------------------------------------

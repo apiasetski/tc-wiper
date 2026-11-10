@@ -21,6 +21,7 @@ typedef const wchar_t* (*tText)();
 typedef void   (*tSetCancel)(BOOL);
 typedef int    (__stdcall *tWiperGo)();
 typedef int    (*tWipeItems)(const wchar_t*, const wchar_t*);
+typedef int    (*tWipeList)(const wchar_t*);
 
 static tFsFindFirstW  pFindFirst;
 static tFsStatusInfoW pStatus;
@@ -34,6 +35,7 @@ static tText          pConfirm, pSummary;
 static tSetCancel     pSetCancel;
 static tWiperGo       pWiperGo;
 static tWipeItems     pWipeItems;
+static tWipeList      pWipeList;
 
 static int g_failed;
 
@@ -117,6 +119,26 @@ static void MkDir(const std::wstring& rel)
 static void Start() { pStatus(nullptr, FS_STATUS_START, FS_STATUS_OP_PUT_MULTI); }
 static void End()   { pStatus(nullptr, FS_STATUS_END, FS_STATUS_OP_PUT_MULTI); }
 
+// Writes a list file like TC's %WL (UTF-16, `bom` optional) or %UL (UTF-8).
+static void WriteList(const std::wstring& p, const std::vector<std::wstring>& lines, bool utf16, bool bom)
+{
+    std::wstring text;
+    for (const auto& l : lines) text += l + L"\r\n";
+    std::string data;
+    if (utf16) {
+        if (bom) data = "\xFF\xFE";
+        data.append(reinterpret_cast<const char*>(text.data()), text.size() * sizeof(wchar_t));
+    } else {
+        int n = WideCharToMultiByte(CP_UTF8, 0, text.data(), (int)text.size(), nullptr, 0, nullptr, nullptr);
+        data.resize(n);
+        WideCharToMultiByte(CP_UTF8, 0, text.data(), (int)text.size(), &data[0], n, nullptr, nullptr);
+    }
+    HANDLE h = CreateFileW(p.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    DWORD w = 0;
+    WriteFile(h, data.data(), (DWORD)data.size(), &w, nullptr);
+    CloseHandle(h);
+}
+
 static size_t Count(const std::wstring& text, const std::wstring& part)
 {
     size_t n = 0;
@@ -149,9 +171,10 @@ int wmain(int argc, wchar_t** argv)
     pSetCancel = (tSetCancel)GetProcAddress(dll, "TcwTestSetCancel");
     pWiperGo   = (tWiperGo)GetProcAddress(dll, "WiperGo");
     pWipeItems = (tWipeItems)GetProcAddress(dll, "TcwTestWipeItems");
+    pWipeList  = (tWipeList)GetProcAddress(dll, "TcwTestWipeList");
     const char* required[] = { "FsInit", "FsFindFirst", "FsFindNext", "FsFindClose", "FsGetDefRootName",
                                "FsPutFile", "FsMkDir", "FsStatusInfo", "FsExecuteFile", "FsGetFile" };
-    bool allExports = pInit && pFindFirst && pStatus && pPut && pMkDir && pFindNext && pFindClose && pExecute && pGet && pConfirm && pSummary && pSetCancel && pWiperGo && pWipeItems;
+    bool allExports = pInit && pFindFirst && pStatus && pPut && pMkDir && pFindNext && pFindClose && pExecute && pGet && pConfirm && pSummary && pSetCancel && pWiperGo && pWipeItems && pWipeList;
     for (const char* name : required) allExports = allExports && GetProcAddress(dll, name);
     Check(allExports, L"all WFX functions exported with undecorated names");
     if (!allExports) return 1;
@@ -351,7 +374,65 @@ int wmain(int argc, wchar_t** argv)
     Check(ReadAll(go + L"keep.txt") == std::string(100, 'K'), L"unselected file untouched");
     Check(Contains(pSummary(), L"Securely erased: 3 files and 3 folders."), L"summary after WiperGo");
     Check(pWipeItems(go.c_str(), L"") == 2, L"returns 2 when nothing is selected");
+    MakeFile(go + L"busy.txt", 100);
+    HANDLE busy = CreateFileW((go + L"busy.txt").c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+    MakeFile(go + L"ok.txt", 100);
+    Check(pWipeItems(go.c_str(), L"busy.txt|ok.txt") == -1 && Exists(go + L"busy.txt") &&
+          !Exists(go + L"ok.txt") && Contains(pSummary(), L"in use"),
+          L"returns -1 when a file in use was not erased");
+    CloseHandle(busy);
+    MakeFile(go + L"hl1.txt", 50);
+    CreateHardLinkW((go + L"hl2.txt").c_str(), (go + L"hl1.txt").c_str(), nullptr);
+    Check(pWipeItems(go.c_str(), L"hl1.txt") == -1 && Contains(pSummary(), L"hard links"),
+          L"returns -1 when a hard-linked file was refused");
+    MakeFile(go + L"c1.bin", 1024 * 1024);
+    pSetCancel(TRUE);
+    Check(pWipeItems(go.c_str(), L"c1.bin") == 1 && Exists(go + L"c1.bin"),
+          L"returns 1 when cancelled during the wipe");
+    pSetCancel(FALSE);
     DeleteTree(go);
+
+    wprintf(L"WipeList (list file from a TC user command)\n");
+    std::wstring lst = w + L"lst\\", listFile = work + L"\\list.tmp";
+    CreateDirectoryW(lst.c_str(), nullptr);
+    CreateDirectoryW((lst + L"A").c_str(), nullptr);
+    CreateDirectoryW((lst + L"A\\Sub").c_str(), nullptr);
+    MakeFile(lst + L"A\\a.txt", 100);
+    MakeFile(lst + L"A\\Sub\\b.txt", 100);
+    MakeFile(lst + L"c.txt", 100);
+    MakeFile(lst + L"кириллица.txt", 100);
+    MakeFile(lst + L"keep.txt", 100, 'K');
+    // Folders end with \; A\a.txt is inside the listed folder A (branch view).
+    WriteList(listFile, { lst + L"A\\", lst + L"c.txt", lst + L"A\\a.txt", lst + L"кириллица.txt" }, true, false);
+    Check(pWipeList((L"\"" + listFile + L"\"").c_str()) == 0, L"returns 0 after wiping (UTF-16 list, quoted path)");
+    confirm = pConfirm();
+    Check(Contains(confirm, L"erase 4 files in 2 folders forever.") && Contains(confirm, L"• A\n") &&
+          Contains(confirm, L"• c.txt") && Contains(confirm, L"• кириллица.txt") && !Contains(confirm, L"a.txt"),
+          L"confirmation lists the selection; items inside a listed folder are not repeated");
+    Check(!Exists(lst + L"A") && !Exists(lst + L"c.txt") && !Exists(lst + L"кириллица.txt"),
+          L"listed folder and files erased");
+    Check(ReadAll(lst + L"keep.txt") == std::string(100, 'K'), L"unlisted file untouched");
+    CreateDirectoryW((lst + L"X").c_str(), nullptr);
+    CreateDirectoryW((lst + L"Y").c_str(), nullptr);
+    MakeFile(lst + L"X\\x.txt", 100);
+    MakeFile(lst + L"Y\\y.txt", 100);
+    WriteList(listFile, { lst + L"X\\x.txt", lst + L"Y\\y.txt" }, false, false);
+    Check(pWipeList(listFile.c_str()) == 0 && !Exists(lst + L"X\\x.txt") && !Exists(lst + L"Y\\y.txt") &&
+          Exists(lst + L"X") && Exists(lst + L"Y") && Contains(pConfirm(), L"• X\\x.txt"),
+          L"files from different folders (UTF-8 list): files erased, their folders kept");
+    MakeFile(lst + L"d.txt", 100);
+    WriteList(listFile, { lst + L"d.txt", lst + L"nothere.txt" }, true, true);
+    Check(pWipeList(listFile.c_str()) == -1 && Exists(lst + L"d.txt") && Contains(pSummary(), L"could not find"),
+          L"missing item: nothing erased, returns -1");
+    WriteList(listFile, { lst + L"d.txt", L"Q:\\other drive.txt" }, true, true);
+    Check(pWipeList(listFile.c_str()) == -1 && Exists(lst + L"d.txt") && Contains(pSummary(), L"same one"),
+          L"items on different drives refused");
+    WriteList(listFile, {}, true, false);
+    Check(pWipeList(listFile.c_str()) == 2 && Contains(pSummary(), L"Nothing to erase"), L"empty list returns 2");
+    Check(pWipeList((work + L"\\no such list.tmp").c_str()) == -1 && Contains(pSummary(), L"%WL"),
+          L"unreadable list file returns -1");
+    DeleteFileW(listFile.c_str());
+    DeleteTree(lst);
 
     // Only the files that were meant to survive may be left; no renamed leftovers.
     int count = 0;

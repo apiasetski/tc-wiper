@@ -20,6 +20,7 @@ New-Item -ItemType Directory -Force $stage, $dist | Out-Null
 
 Copy-Item (Join-Path $root 'build\TCWiper.wfx')   $stage
 Copy-Item (Join-Path $root 'build\TCWiper.wfx64') $stage
+Copy-Item (Join-Path $root 'build\TCWiperGo.exe') $stage
 Copy-Item (Join-Path $root 'LICENSE.txt')         $stage
 Copy-Item (Join-Path $root 'history.txt')         $stage
 Copy-Item (Join-Path $root 'docs\TCWiper-Readme.txt')    (Join-Path $stage 'Readme.txt')

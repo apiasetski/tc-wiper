@@ -1,6 +1,6 @@
 # TC Wiper
 
-**Version 1.0.1 beta** · Secure wipe plugin (WFX) for [Total Commander](https://www.ghisler.com/), 32-bit and 64-bit.
+**Version 1.0.2 beta** · Secure wipe plugin (WFX) for [Total Commander](https://www.ghisler.com/), 32-bit and 64-bit.
 
 Its panel shows *Move here to securely wipe* plus two readme files. Files and folders you
 **move (F6)** into it are overwritten with random data, renamed several times to random
@@ -13,11 +13,12 @@ names, and deleted. Nothing is stored anywhere.
 
 ## Install
 
-1. Download `tcwiper_1.0.1_beta.zip` (or build it yourself with `build.cmd`; it lands in `dist\`).
+1. Download `tcwiper_1.0.2_beta.zip` (or build it yourself with `build.cmd`; it lands in `dist\`).
 2. In Total Commander, open the zip (Enter or Ctrl+PgDn on it) and confirm the plugin installation.
 3. Open *Network Neighborhood* (`\\\`) in one panel and enter **Secure Wipe**.
 
-The zip contains both builds: `TCWiper.wfx` (32-bit TC) and `TCWiper.wfx64` (64-bit TC).
+The zip contains both builds: `TCWiper.wfx` (32-bit TC) and `TCWiper.wfx64` (64-bit TC), plus
+`TCWiperGo.exe` for a hotkey or button (see below).
 Each zip has a matching `.sha256` checksum file.
 
 ## Use
@@ -33,6 +34,27 @@ Each zip has a matching `.sha256` checksum file.
 - **Readme.txt** (English) and **Readme_ru.txt** (Russian) in the plugin panel explain in
   detail how files are erased and how secure that is on HDDs and SSDs. F3 views them, F5
   copies them out.
+
+## Hotkey or button: TCWiperGo.exe
+
+`TCWiperGo.exe`, installed next to the plugin, wipes the selected files and folders of the
+active panel without the plugin panel. Total Commander passes it the list of selected items
+(or the item under the cursor) with `%WL`. It uses the same confirmation, progress window and
+summary as F6. One program serves both 32-bit and 64-bit Total Commander.
+
+As a user command (`usercmd.ini` in the folder of `wincmd.ini`), which can then be assigned a
+hotkey in Configuration → Misc or used in menus and buttons:
+
+```
+[em_wiper]
+cmd=%COMMANDER_PATH%\Plugins\wfx\TCWiper\TCWiperGo.exe
+param=%WL
+```
+
+Or directly on a button: Command `%COMMANDER_PATH%\Plugins\wfx\TCWiper\TCWiperGo.exe`,
+Parameters `%WL`. Adjust the path if the plugin is installed elsewhere. The exit code is
+the same as WiperGo's return value (below). Items may come from different folders (branch
+view), but must be on one drive or network share.
 
 ## Scripting: WiperGo
 
@@ -53,10 +75,10 @@ DllCall("FreeLibrary", "handle", hDll)
 
 | Return value | Meaning |
 |---|---|
-| 0 | Wiped, summary shown |
-| 1 | The user answered No |
+| 0 | Everything wiped, summary shown |
+| 1 | The user answered No or pressed Cancel |
 | 2 | Nothing selected |
-| -1 | Error; TC Wiper has already shown a message |
+| -1 | Error, or some items were not erased (in use, hard links, protected); TC Wiper has already shown a message |
 
 Works for regular folders only (no archives, FTP or plugin panels), in Brief, Full and
 Comments views. Thumbnail view is refused because its rows do not map to single files.
@@ -104,7 +126,7 @@ with your Windows version, Total Commander version and 32/64-bit.
 - Version, author and license strings: `src\version.h` (single place; `package.ps1` reads it).
 - Readme texts: `docs\TCWiper-Readme.txt` and `docs\TCWiper-Readme.ru.txt`, embedded into
   the plugin when building. Catalog descriptions: `docs\listing-en.txt`, `docs\listing-ru.txt`.
-- `build.cmd` builds both plugins and the release zip (it refuses to overwrite zips of a
+- `build.cmd` builds both plugins, `TCWiperGo.exe` and the release zip (it refuses to overwrite zips of a
   version that already exists in `dist\`). `build.cmd test` builds both plugins and runs
   `tests\test_harness.cpp` against a test build (message boxes auto-answered) for 32 and
   64 bit, without packaging.

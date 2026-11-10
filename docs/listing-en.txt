@@ -1,5 +1,5 @@
 NAME
-TC Wiper 1.0.1 beta
+TC Wiper 1.0.2 beta
 
 CATEGORY
 File system plugin (WFX), 32-bit and 64-bit
@@ -22,22 +22,21 @@ Safety:
 - For symbolic links only the link is removed, never the target.
 - F5 (Copy) never erases anything.
 
-For scripts: the exported function WiperGo wipes the selection of the active panel with the same confirmation, so wiping can be put on a hotkey or an em_ command, e.g. with the Autorun plugin. See Readme.txt.
+Hotkey or button without the plugin panel: TCWiperGo.exe, installed with the plugin, wipes the selected items that Total Commander passes to it with %WL, with the same confirmation. Set it up as an em_ command in usercmd.ini. Scripts running inside Total Commander (e.g. the Autorun plugin) can call the exported function WiperGo instead. See Readme.txt.
 
 Honest limits: on hard disks (HDD) erased content cannot be recovered. On SSDs, USB sticks and memory cards no file-level tool can guarantee that the flash chips hold no old copy: TC Wiper defeats recovery software, not a laboratory reading the chips. Copies outside the file (older versions, shadow copies, cloud sync, backups) are not touched. Readme.txt in the plugin panel explains all of this in detail.
 
 BETA: this version has been tested by the author only. Try it on test files first. Erased files cannot be restored. Provided as is, without warranty.
 
-Antivirus note: Kaspersky reports a generic heuristic detection (VHO:Trojan.Win32.Dllhijack.gen). This is believed to be a false positive, typical for new unsigned file-wiping tools. The full source code is public.
+Antivirus note: for version 1.0.0 beta Kaspersky reported a generic heuristic detection (VHO:Trojan.Win32.Dllhijack.gen). This is believed to be a false positive, typical for new unsigned file-wiping tools. The full source code is public.
 
 Developed using Claude Opus 5.5 Medium (Anthropic).
 
 Requirements: Total Commander 64-bit or 32-bit with Unicode support, Windows 10 or 11.
 License: GNU GPL v3.0 or later (source code included as a separate archive).
-Download, source code and bug reports: https://github.com/apiasetski/tc-wiper/releases/tag/v1.0.1-beta
+Source code and bug reports: https://github.com/apiasetski/tc-wiper/releases/tag/v1.0.2-beta
 Author: Andrei Piasetski
 
-WHAT'S NEW IN 1.0.1 BETA
-- New exported function WiperGo for scripts running inside Total Commander (e.g. Autorun): wipes the selected files and folders of the active panel, or the item under the cursor, with the usual confirmation. Requested by Orion9.
-- Folder links (junctions) inside wiped folders: only the link is removed.
-- Empty folders inside Windows and Program Files are no longer removed.
+WHAT'S NEW IN 1.0.2 BETA
+- New TCWiperGo.exe: put secure wiping on a hotkey or button without the Autorun plugin. A Total Commander user command passes it the selected files and folders with %WL, and it wipes them with the usual confirmation. One program for 32-bit and 64-bit TC; see Readme.txt.
+- WiperGo now returns -1 when some items were not erased (file in use, hard links, protected folder) and 1 when Cancel was pressed during the wipe. Reported by Orion9.
